@@ -7,3 +7,5 @@ streamlit
 requests
 beautifulsoup4
 lxml
+fpdf2
+pandas

@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from app.scrapper import get_website_text, normalize_url
 from app.search_engine import discover_competitor_candidates
+from app.scoring import enrich_competitor_scores, compute_market_summary
 
 load_dotenv()
 
@@ -197,6 +198,56 @@ def analyze_business(website: str, industry: str) -> dict:
         business_text=business_text,
         competitors=competitors
     )
+
+    result["target_business"] = {
+        "website": website,
+        "industry": industry,
+        "business_name": business_name,
+        "summary": identity.get("summary", ""),
+        "core_offer": identity.get("core_offer", "")
+    }
+
+    result["candidate_competitors"] = candidates
+    return result
+
+def analyze_business(website: str, industry: str) -> dict:
+    website = normalize_url(website)
+    business_text = get_website_text(website)
+
+    identity = extract_business_identity(
+        website=website,
+        industry=industry,
+        business_text=business_text
+    )
+
+    business_name = identity.get("business_name", "Unknown Business")
+
+    candidates = discover_competitor_candidates(
+        business_name=business_name,
+        industry=industry,
+        target_website=website,
+        max_results=8
+    )
+
+    competitors = select_best_competitors(
+        business_name=business_name,
+        industry=industry,
+        business_text=business_text,
+        candidates=candidates
+    )
+
+    result = compare_business_to_competitors(
+        website=website,
+        industry=industry,
+        business_text=business_text,
+        competitors=competitors
+    )
+
+    scored_competitors = enrich_competitor_scores(result.get("competitors", []))
+    market_summary = compute_market_summary(scored_competitors)
+
+    result["competitors"] = scored_competitors
+    result["market_summary"] = market_summary
 
     result["target_business"] = {
         "website": website,
