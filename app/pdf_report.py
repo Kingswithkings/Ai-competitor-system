@@ -7,7 +7,6 @@ from fpdf import FPDF
 
 REPORTS_DIR = "reports"
 
-# Update if needed for your machine
 FONT_CANDIDATES = [
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
     "/System/Library/Fonts/Supplemental/Arial.ttf",
@@ -63,7 +62,6 @@ class AuditPDF(FPDF):
 
         self.font_name = "Helvetica"
         font_path = resolve_font_path()
-
         if font_path:
             try:
                 self.add_font("ArialUnicode", "", font_path)
@@ -85,43 +83,30 @@ class AuditPDF(FPDF):
     def section_body(self, text: Any):
         self.set_font(self.font_name, size=10)
         self.set_x(self.l_margin)
-        safe_value = clean_text(text)
-
-        if not safe_value:
-            safe_value = "N/A"
+        safe_value = clean_text(text) or "N/A"
 
         try:
             self.multi_cell(0, 6, safe_value)
         except Exception:
             fallback = safe_value.encode("latin-1", "ignore").decode("latin-1")
-            if not fallback.strip():
-                fallback = "Content could not be rendered."
-            self.multi_cell(0, 6, fallback)
+            self.multi_cell(0, 6, fallback or "Content could not be rendered.")
 
     def bullet_list(self, items: List[str]):
-        self.set_font(self.font_name, size=10)
-
         if not items:
             self.section_body("N/A")
             return
 
         for item in items:
-            bullet = f"- {clean_text(item)}"
-            self.set_x(self.l_margin)
-            try:
-                self.multi_cell(0, 6, bullet)
-            except Exception:
-                fallback = bullet.encode("latin-1", "ignore").decode("latin-1")
-                self.multi_cell(0, 6, fallback)
+            self.section_body(f"- {item}")
 
     def add_competitor_table(self, competitors: List[Dict[str, Any]]):
-        self.set_font(self.font_name, size=9)
-
         if not competitors:
             self.section_body("No competitors available.")
             return
 
-        col_widths = {
+        self.set_font(self.font_name, size=9)
+
+        widths = {
             "name": 42,
             "presence": 18,
             "engagement": 22,
@@ -139,9 +124,8 @@ class AuditPDF(FPDF):
             ("grade", "Grade"),
         ]
 
-        self.set_font(self.font_name, size=9)
         for key, label in headers:
-            self.cell(col_widths[key], 8, label, border=1)
+            self.cell(widths[key], 8, label, border=1)
         self.ln()
 
         for comp in competitors:
@@ -154,14 +138,29 @@ class AuditPDF(FPDF):
                 "grade": str(comp.get("grade", "")),
             }
 
-            for key, _label in headers:
-                cell_value = clean_text(row[key])
-                try:
-                    self.cell(col_widths[key], 8, cell_value, border=1)
-                except Exception:
-                    fallback = cell_value.encode("latin-1", "ignore").decode("latin-1")
-                    self.cell(col_widths[key], 8, fallback, border=1)
+            for key, _ in headers:
+                self.cell(widths[key], 8, clean_text(row[key]), border=1)
             self.ln()
+
+    def add_ai_tools_section(self, ai_tools: List[Dict[str, Any]]):
+        if not ai_tools:
+            self.section_body("No AI tool recommendations available.")
+            return
+
+        for idx, item in enumerate(ai_tools, start=1):
+            suggested_tools = item.get("suggested_tools", [])
+            suggested_tools_str = ", ".join(suggested_tools) if isinstance(suggested_tools, list) else str(suggested_tools)
+
+            block = (
+                f"{idx}. Business Need: {item.get('business_need', 'N/A')}\n"
+                f"Tool Category: {item.get('tool_category', 'N/A')}\n"
+                f"Priority: {item.get('priority', 'N/A')}\n"
+                f"Implementation Type: {item.get('implementation_type', 'N/A')}\n"
+                f"Suggested Tools: {suggested_tools_str}\n"
+                f"Reason: {item.get('reason', 'N/A')}"
+            )
+            self.section_body(block)
+            self.ln(1)
 
 
 def generate_pdf_report(audit_id: int, audit_data: dict) -> str:
@@ -176,12 +175,14 @@ def generate_pdf_report(audit_id: int, audit_data: dict) -> str:
     insights = audit_data.get("insights", [])
     recommendations = audit_data.get("recommendations", [])
     market_summary = audit_data.get("market_summary", {})
+    ai_tool_recommendations = audit_data.get("ai_tool_recommendations", [])
 
     pdf.section_title("Business Overview")
     pdf.section_body(
         f"Business Name: {target.get('business_name', 'N/A')}\n"
         f"Website: {target.get('website', 'N/A')}\n"
         f"Industry: {target.get('industry', 'N/A')}\n"
+        f"Location: {target.get('location', 'N/A')}\n"
         f"Summary: {target.get('summary', 'N/A')}\n"
         f"Core Offer: {target.get('core_offer', 'N/A')}"
     )
@@ -201,6 +202,9 @@ def generate_pdf_report(audit_id: int, audit_data: dict) -> str:
 
     pdf.section_title("Recommendations")
     pdf.bullet_list(recommendations)
+
+    pdf.section_title("Recommended AI Tools")
+    pdf.add_ai_tools_section(ai_tool_recommendations)
 
     pdf.output(output_path)
     return output_path

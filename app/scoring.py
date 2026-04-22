@@ -16,11 +16,11 @@ def compute_weighted_score(presence: int, engagement: int, automation: int) -> f
 def assign_grade(score: float) -> str:
     if score >= 8.5:
         return "A"
-    elif score >= 7.0:
+    if score >= 7.0:
         return "B"
-    elif score >= 5.5:
+    if score >= 5.5:
         return "C"
-    elif score >= 4.0:
+    if score >= 4.0:
         return "D"
     return "E"
 
@@ -36,12 +36,11 @@ def enrich_competitor_scores(competitors: list) -> list:
         weighted_score = compute_weighted_score(presence, engagement, automation)
         grade = assign_grade(weighted_score)
 
-        updated = {
+        enriched.append({
             **comp,
             "weighted_score": weighted_score,
             "grade": grade,
-        }
-        enriched.append(updated)
+        })
 
     return sorted(enriched, key=lambda x: x["weighted_score"], reverse=True)
 
@@ -51,7 +50,7 @@ def compute_market_summary(competitors: list) -> dict:
         return {
             "average_score": 0,
             "top_score": 0,
-            "average_grade": "N/A"
+            "average_grade": "N/A",
         }
 
     scores = [c["weighted_score"] for c in competitors]

@@ -1,6 +1,8 @@
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse, unquote
+from urllib.parse import unquote
+
+from app.scraper import normalize_url, get_domain
 
 
 HEADERS = {
@@ -18,16 +20,12 @@ EXCLUDED_DOMAINS = {
     "twitter.com",
     "x.com",
     "youtube.com",
-    "yelp.com",
     "trustpilot.com",
     "tripadvisor.com",
     "wikipedia.org",
     "crunchbase.com",
     "indeed.com",
     "glassdoor.com",
-    "mapquest.com",
-    "yellowpages.com",
-    "directory.company",
 }
 
 EXCLUDED_KEYWORDS = [
@@ -36,23 +34,7 @@ EXCLUDED_KEYWORDS = [
     "review",
     "jobs",
     "career",
-    "facebook",
-    "instagram",
-    "linkedin",
-    "youtube",
 ]
-
-
-def normalize_url(url: str) -> str:
-    url = url.strip()
-    if not url.startswith(("http://", "https://")):
-        url = f"https://{url}"
-    return url
-
-
-def get_domain(url: str) -> str:
-    parsed = urlparse(normalize_url(url))
-    return parsed.netloc.replace("www.", "").lower()
 
 
 def is_excluded(url: str, target_domain: str = "") -> bool:
@@ -61,9 +43,8 @@ def is_excluded(url: str, target_domain: str = "") -> bool:
     if target_domain and domain == target_domain:
         return True
 
-    for blocked in EXCLUDED_DOMAINS:
-        if domain.endswith(blocked):
-            return True
+    if any(domain.endswith(blocked) for blocked in EXCLUDED_DOMAINS):
+        return True
 
     lower_url = url.lower()
     if any(keyword in lower_url for keyword in EXCLUDED_KEYWORDS):
@@ -78,7 +59,7 @@ def search_duckduckgo(query: str, max_results: int = 10) -> list:
         search_url,
         data={"q": query},
         headers=HEADERS,
-        timeout=15
+        timeout=20,
     )
     response.raise_for_status()
 
@@ -112,16 +93,18 @@ def discover_competitor_candidates(
     business_name: str,
     industry: str,
     target_website: str,
+    location: str | None = None,
     max_results: int = 10
 ) -> list:
     target_domain = get_domain(target_website)
-
     queries = [
         f"{business_name} competitors {industry}",
         f"best {industry} companies like {business_name}",
-        f"{industry} companies similar to {business_name}",
-        f"{industry} providers {target_domain}",
+        f"{industry} businesses similar to {business_name}",
     ]
+
+    if location:
+        queries.append(f"{industry} companies in {location}")
 
     seen_domains = set()
     candidates = []
@@ -145,7 +128,7 @@ def discover_competitor_candidates(
             seen_domains.add(domain)
             candidates.append({
                 "name": item["title"],
-                "website": url
+                "website": normalize_url(url)
             })
 
     return candidates[:10]
