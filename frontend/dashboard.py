@@ -40,6 +40,7 @@ def run_audit_request(payload: dict):
         from app.pdf_report import generate_pdf_report
 
         init_db()
+
         result = analyze_business(
             website=payload["website"],
             industry=payload["industry"],
@@ -56,8 +57,14 @@ def run_audit_request(payload: dict):
             summary=target.get("summary", ""),
             result=result,
         )
+
         pdf_path = generate_pdf_report(audit_id, result)
-        return {"audit_id": audit_id, "pdf_path": pdf_path, "result": result}
+
+        return {
+            "audit_id": audit_id,
+            "pdf_path": pdf_path,
+            "result": result,
+        }
 
     response = requests.post(
         f"{API_BASE}/audit",
@@ -100,6 +107,11 @@ def show_pdf_download(audit_id: int, audit_data: dict, label: str):
     from app.pdf_report import generate_pdf_report
 
     pdf_path = Path(generate_pdf_report(audit_id, audit_data))
+
+    if not pdf_path.exists():
+        st.warning("PDF report could not be found.")
+        return
+
     with pdf_path.open("rb") as pdf_file:
         st.download_button(
             label=label,
@@ -117,6 +129,7 @@ def show_ai_tool_recommendations(ai_tools: list):
         return
 
     tool_df = pd.DataFrame(ai_tools)
+
     preferred_order = [
         "business_need",
         "tool_category",
@@ -125,6 +138,7 @@ def show_ai_tool_recommendations(ai_tools: list):
         "implementation_type",
         "reason",
     ]
+
     existing_columns = [c for c in preferred_order if c in tool_df.columns]
     tool_df = tool_df[existing_columns].copy()
 
@@ -141,15 +155,35 @@ st.set_page_config(page_title="1stkings AI Business Audit", layout="wide")
 st.title("🚀 1stkings AI Business Audit")
 st.caption("Competitor analysis, scoring, AI recommendations, and client-ready reports.")
 
+if USE_API_BACKEND:
+    st.info(f"Using backend API: {API_BASE}")
+else:
+    st.info("Running in direct Streamlit mode. No external FastAPI backend is configured.")
+
 tab1, tab2 = st.tabs(["Run Audit", "Audit History"])
 
 with tab1:
     st.subheader("Run New Audit")
 
-    business_name = st.text_input("Business Name (optional)", placeholder="Example Ltd")
-    website = st.text_input("Business Website", placeholder="https://example.com")
-    industry = st.text_input("Industry", placeholder="e.g. logistics, restaurant, retail")
-    location = st.text_input("Location (optional)", placeholder="e.g. London, UK")
+    business_name = st.text_input(
+        "Business Name (optional)",
+        placeholder="Example Ltd",
+    )
+
+    website = st.text_input(
+        "Business Website",
+        placeholder="https://example.com",
+    )
+
+    industry = st.text_input(
+        "Industry",
+        placeholder="e.g. logistics, restaurant, retail",
+    )
+
+    location = st.text_input(
+        "Location (optional)",
+        placeholder="e.g. London, UK",
+    )
 
     if st.button("Run Analysis", type="primary"):
         if not website.strip() or not industry.strip():
@@ -180,17 +214,21 @@ with tab1:
                 st.success(f"Audit completed successfully. Audit ID: {audit_id}")
 
                 st.subheader("Target Business")
+
                 c1, c2 = st.columns(2)
+
                 with c1:
                     st.write(f"**Business Name:** {target.get('business_name', 'N/A')}")
                     st.write(f"**Website:** {target.get('website', 'N/A')}")
                     st.write(f"**Industry:** {target.get('industry', 'N/A')}")
                     st.write(f"**Location:** {target.get('location', 'N/A')}")
+
                 with c2:
                     st.write(f"**Summary:** {target.get('summary', 'N/A')}")
                     st.write(f"**Core Offer:** {target.get('core_offer', 'N/A')}")
 
                 st.subheader("Market Summary")
+
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Average Score", market_summary.get("average_score", 0))
                 m2.metric("Top Score", market_summary.get("top_score", 0))
@@ -200,6 +238,7 @@ with tab1:
                 st.json(target_metrics)
 
                 st.subheader("Collected Pages")
+
                 if collected_pages:
                     pages_df = pd.DataFrame(collected_pages)
                     st.dataframe(pages_df, use_container_width=True)
@@ -207,14 +246,17 @@ with tab1:
                     st.info("No pages collected.")
 
                 st.subheader("Candidate Competitors Found by Search")
+
                 if candidate_competitors:
                     st.dataframe(pd.DataFrame(candidate_competitors), use_container_width=True)
                 else:
                     st.info("No candidate competitors were found.")
 
                 st.subheader("Selected Competitor Scores")
+
                 if competitors:
                     score_df = pd.DataFrame(competitors)
+
                     preferred_order = [
                         "name",
                         "website",
@@ -225,12 +267,14 @@ with tab1:
                         "grade",
                         "strength",
                     ]
+
                     existing = [c for c in preferred_order if c in score_df.columns]
                     st.dataframe(score_df[existing], use_container_width=True)
                 else:
                     st.info("No final competitors were selected.")
 
                 st.subheader("Insights")
+
                 if insights:
                     for item in insights:
                         st.write(f"- {item}")
@@ -238,6 +282,7 @@ with tab1:
                     st.write("No insights available.")
 
                 st.subheader("Recommendations")
+
                 if recommendations:
                     for item in recommendations:
                         st.write(f"- {item}")
@@ -267,62 +312,100 @@ with tab2:
 
     try:
         audits = load_audit_history()
+
         if not audits:
             st.info("No saved audits yet.")
         else:
             history_df = pd.DataFrame(audits)
             st.dataframe(history_df, use_container_width=True)
 
-            audit_ids = history_df["id"].tolist()
-            selected_audit_id = st.selectbox("Select an Audit ID", audit_ids)
+            if "id" not in history_df.columns:
+                st.warning("Audit history exists, but no ID column was found.")
+            else:
+                audit_ids = history_df["id"].tolist()
+                selected_audit_id = st.selectbox("Select an Audit ID", audit_ids)
 
-            if selected_audit_id:
-                detail = load_audit_detail(int(selected_audit_id))
-                result = detail.get("result_json", {})
+                if selected_audit_id:
+                    detail = load_audit_detail(int(selected_audit_id))
 
-                target = result.get("target_business", {})
-                market_summary = result.get("market_summary", {})
-                competitors = result.get("competitors", [])
-                insights = result.get("insights", [])
-                recommendations = result.get("recommendations", [])
-                ai_tool_recommendations = result.get("ai_tool_recommendations", [])
+                    if not detail:
+                        st.warning("Selected audit could not be loaded.")
+                    else:
+                        result = detail.get("result_json", {})
 
-                st.markdown("---")
-                st.subheader(f"Audit Detail: {selected_audit_id}")
-                st.write(f"**Business Name:** {target.get('business_name', detail.get('business_name', 'N/A'))}")
-                st.write(f"**Website:** {target.get('website', detail.get('website', 'N/A'))}")
-                st.write(f"**Industry:** {target.get('industry', detail.get('industry', 'N/A'))}")
-                st.write(f"**Location:** {target.get('location', detail.get('location', 'N/A'))}")
-                st.write(f"**Created At:** {detail.get('created_at', 'N/A')}")
+                        target = result.get("target_business", {})
+                        market_summary = result.get("market_summary", {})
+                        competitors = result.get("competitors", [])
+                        insights = result.get("insights", [])
+                        recommendations = result.get("recommendations", [])
+                        ai_tool_recommendations = result.get("ai_tool_recommendations", [])
 
-                d1, d2, d3 = st.columns(3)
-                d1.metric("Average Score", market_summary.get("average_score", 0))
-                d2.metric("Top Score", market_summary.get("top_score", 0))
-                d3.metric("Average Grade", market_summary.get("average_grade", "N/A"))
+                        st.markdown("---")
+                        st.subheader(f"Audit Detail: {selected_audit_id}")
 
-                if competitors:
-                    st.dataframe(pd.DataFrame(competitors), use_container_width=True)
+                        st.write(
+                            f"**Business Name:** "
+                            f"{target.get('business_name', detail.get('business_name', 'N/A'))}"
+                        )
+                        st.write(
+                            f"**Website:** "
+                            f"{target.get('website', detail.get('website', 'N/A'))}"
+                        )
+                        st.write(
+                            f"**Industry:** "
+                            f"{target.get('industry', detail.get('industry', 'N/A'))}"
+                        )
+                        st.write(
+                            f"**Location:** "
+                            f"{target.get('location', detail.get('location', 'N/A'))}"
+                        )
+                        st.write(f"**Created At:** {detail.get('created_at', 'N/A')}")
 
-                st.subheader("Insights")
-                for item in insights:
-                    st.write(f"- {item}")
+                        d1, d2, d3 = st.columns(3)
+                        d1.metric("Average Score", market_summary.get("average_score", 0))
+                        d2.metric("Top Score", market_summary.get("top_score", 0))
+                        d3.metric("Average Grade", market_summary.get("average_grade", "N/A"))
 
-                st.subheader("Recommendations")
-                for item in recommendations:
-                    st.write(f"- {item}")
+                        st.subheader("Competitor Scores")
 
-                show_ai_tool_recommendations(ai_tool_recommendations)
+                        if competitors:
+                            st.dataframe(pd.DataFrame(competitors), use_container_width=True)
+                        else:
+                            st.info("No competitor data available.")
 
-                show_pdf_download(
-                    selected_audit_id,
-                    result,
-                    f"Download PDF Report for Audit {selected_audit_id}",
-                )
+                        st.subheader("Insights")
+
+                        if insights:
+                            for item in insights:
+                                st.write(f"- {item}")
+                        else:
+                            st.write("No insights available.")
+
+                        st.subheader("Recommendations")
+
+                        if recommendations:
+                            for item in recommendations:
+                                st.write(f"- {item}")
+                        else:
+                            st.write("No recommendations available.")
+
+                        show_ai_tool_recommendations(ai_tool_recommendations)
+
+                        show_pdf_download(
+                            int(selected_audit_id),
+                            result,
+                            f"Download PDF Report for Audit {selected_audit_id}",
+                        )
 
     except requests.exceptions.ConnectionError:
         st.error(
             f"Could not connect to the backend API at {API_BASE}. "
             "Check that API_BASE_URL points to a reachable FastAPI URL."
         )
+    except requests.exceptions.HTTPError as e:
+        try:
+            st.error(f"API error: {e.response.json()}")
+        except Exception:
+            st.error(f"API error: {e.response.text}")
     except Exception as e:
         st.error(f"Unexpected error while loading history: {str(e)}")
