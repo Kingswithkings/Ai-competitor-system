@@ -1,9 +1,22 @@
+import os
+
 import requests
 import pandas as pd
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 
 
-API_BASE = "http://127.0.0.1:8000"
+def get_api_base() -> str:
+    try:
+        configured_url = st.secrets.get("API_BASE_URL", None)
+    except StreamlitSecretNotFoundError:
+        configured_url = None
+
+    configured_url = configured_url or os.getenv("API_BASE_URL")
+    return (configured_url or "http://127.0.0.1:8000").rstrip("/")
+
+
+API_BASE = get_api_base()
 
 
 def run_audit_request(payload: dict):
@@ -169,7 +182,10 @@ with tab1:
                     st.markdown(f"[Download PDF Report]({API_BASE}/audits/{audit_id}/pdf)")
 
             except requests.exceptions.ConnectionError:
-                st.error("Could not connect to the backend API. Start FastAPI on http://127.0.0.1:8000.")
+                st.error(
+                    f"Could not connect to the backend API at {API_BASE}. "
+                    "If this app is deployed, set API_BASE_URL to your public FastAPI URL."
+                )
             except requests.exceptions.HTTPError as e:
                 try:
                     st.error(f"API error: {e.response.json()}")
@@ -232,6 +248,9 @@ with tab2:
                 st.markdown(f"[Download PDF Report for Audit {selected_audit_id}]({API_BASE}/audits/{selected_audit_id}/pdf)")
 
     except requests.exceptions.ConnectionError:
-        st.error("Could not connect to the backend API.")
+        st.error(
+            f"Could not connect to the backend API at {API_BASE}. "
+            "If this app is deployed, set API_BASE_URL to your public FastAPI URL."
+        )
     except Exception as e:
         st.error(f"Unexpected error while loading history: {str(e)}")
