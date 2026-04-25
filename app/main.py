@@ -1,10 +1,15 @@
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from dotenv import load_dotenv
 
 from app.schemas import AuditRequest
 from app.ai_engine import analyze_business
 from app.database import init_db, save_audit, list_audits, get_audit
 
+
+load_dotenv()
 
 app = FastAPI(title="1stkings AI Competitor System")
 
@@ -18,7 +23,13 @@ def build_pdf_report(audit_id: int, audit_data: dict) -> str:
             detail="PDF generation is unavailable because required dependencies are not installed.",
         ) from exc
 
-    return generate_pdf_report(audit_id, audit_data)
+    try:
+        return generate_pdf_report(audit_id, audit_data)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"PDF report could not be generated: {exc}",
+        ) from exc
 
 
 def get_audit_pdf_response(audit_id: int):
@@ -26,7 +37,10 @@ def get_audit_pdf_response(audit_id: int):
     if not audit:
         raise HTTPException(status_code=404, detail="Audit not found")
 
-    pdf_path = build_pdf_report(audit_id, audit["result_json"])
+    pdf_path = Path(build_pdf_report(audit_id, audit["result_json"]))
+    if not pdf_path.exists():
+        raise HTTPException(status_code=500, detail="PDF report was not created")
+
     return FileResponse(
         pdf_path,
         media_type="application/pdf",

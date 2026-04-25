@@ -8,7 +8,11 @@ sys.path.append(str(ROOT_DIR))
 import requests
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
 from streamlit.errors import StreamlitSecretNotFoundError
+
+
+load_dotenv(ROOT_DIR / ".env")
 
 
 def get_secret(name: str):
@@ -106,24 +110,54 @@ def load_audit_detail(audit_id: int):
 
 def show_pdf_download(audit_id: int, audit_data: dict, label: str):
     if USE_API_BACKEND:
-        st.markdown(f"[{label}]({API_BASE}/audits/{audit_id}/pdf)")
+        try:
+            response = requests.get(f"{API_BASE}/audits/{audit_id}/pdf", timeout=60)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as exc:
+            st.error(f"PDF report could not be downloaded: {exc}")
+            return
+
+        if not response.content:
+            st.warning("PDF report was empty.")
+            return
+
+        st.download_button(
+            label=label,
+            data=response.content,
+            file_name=f"audit_{audit_id}.pdf",
+            mime="application/pdf",
+        )
         return
 
-    from app.pdf_report import generate_pdf_report
+    try:
+        from app.pdf_report import generate_pdf_report
 
-    pdf_path = Path(generate_pdf_report(audit_id, audit_data))
+        pdf_path = Path(generate_pdf_report(audit_id, audit_data))
+    except ModuleNotFoundError:
+        st.error(
+            "PDF generation is unavailable because fpdf2 is not installed. "
+            "Run the app from the project virtual environment or install requirements.txt."
+        )
+        return
+    except Exception as exc:
+        st.error(f"PDF report could not be generated: {exc}")
+        return
 
     if not pdf_path.exists():
         st.warning("PDF report could not be found.")
         return
 
-    with pdf_path.open("rb") as pdf_file:
-        st.download_button(
-            label=label,
-            data=pdf_file,
-            file_name=pdf_path.name,
-            mime="application/pdf",
-        )
+    pdf_bytes = pdf_path.read_bytes()
+    if not pdf_bytes:
+        st.warning("PDF report was empty.")
+        return
+
+    st.download_button(
+        label=label,
+        data=pdf_bytes,
+        file_name=pdf_path.name,
+        mime="application/pdf",
+    )
 
 
 def show_ai_tool_recommendations(ai_tools: list):
