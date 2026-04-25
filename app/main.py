@@ -21,6 +21,19 @@ def build_pdf_report(audit_id: int, audit_data: dict) -> str:
     return generate_pdf_report(audit_id, audit_data)
 
 
+def get_audit_pdf_response(audit_id: int):
+    audit = get_audit(audit_id)
+    if not audit:
+        raise HTTPException(status_code=404, detail="Audit not found")
+
+    pdf_path = build_pdf_report(audit_id, audit["result_json"])
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename=f"audit_{audit_id}.pdf",
+    )
+
+
 @app.on_event("startup")
 def startup_event():
     init_db()
@@ -84,13 +97,9 @@ def get_single_audit(audit_id: int):
 
 @app.get("/audits/{audit_id}/pdf")
 def download_audit_pdf(audit_id: int):
-    audit = get_audit(audit_id)
-    if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+    return get_audit_pdf_response(audit_id)
 
-    pdf_path = build_pdf_report(audit_id, audit["result_json"])
-    return FileResponse(
-        pdf_path,
-        media_type="application/pdf",
-        filename=f"audit_{audit_id}.pdf",
-    )
+
+@app.get("/reports/audit_{audit_id}.pdf")
+def download_report_pdf(audit_id: int):
+    return get_audit_pdf_response(audit_id)
