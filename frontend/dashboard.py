@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import requests
 import pandas as pd
@@ -6,20 +7,58 @@ import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
 
 
-def get_api_base() -> str:
+def get_secret(name: str):
     try:
-        configured_url = st.secrets.get("API_BASE_URL", None)
+        return st.secrets.get(name, None)
     except StreamlitSecretNotFoundError:
-        configured_url = None
+        return None
 
-    configured_url = configured_url or os.getenv("API_BASE_URL")
-    return (configured_url or "http://127.0.0.1:8000").rstrip("/")
+
+def configure_secret_env() -> None:
+    for name in ("OPENAI_API_KEY",):
+        if not os.getenv(name):
+            secret_value = get_secret(name)
+            if secret_value:
+                os.environ[name] = secret_value
+
+
+def get_api_base() -> str | None:
+    configured_url = get_secret("API_BASE_URL") or os.getenv("API_BASE_URL")
+    return configured_url.rstrip("/") if configured_url else None
 
 
 API_BASE = get_api_base()
+USE_API_BACKEND = API_BASE is not None
 
 
 def run_audit_request(payload: dict):
+    if not USE_API_BACKEND:
+        configure_secret_env()
+
+        from app.ai_engine import analyze_business
+        from app.database import init_db, save_audit
+        from app.pdf_report import generate_pdf_report
+
+        init_db()
+        result = analyze_business(
+            website=payload["website"],
+            industry=payload["industry"],
+            business_name=payload.get("business_name"),
+            location=payload.get("location"),
+        )
+
+        target = result.get("target_business", {})
+        audit_id = save_audit(
+            business_name=target.get("business_name", ""),
+            website=target.get("website", payload["website"]),
+            industry=target.get("industry", payload["industry"]),
+            location=target.get("location", payload.get("location") or ""),
+            summary=target.get("summary", ""),
+            result=result,
+        )
+        pdf_path = generate_pdf_report(audit_id, result)
+        return {"audit_id": audit_id, "pdf_path": pdf_path, "result": result}
+
     response = requests.post(
         f"{API_BASE}/audit",
         json=payload,
@@ -30,15 +69,44 @@ def run_audit_request(payload: dict):
 
 
 def load_audit_history():
+    if not USE_API_BACKEND:
+        from app.database import init_db, list_audits
+
+        init_db()
+        return list_audits()
+
     response = requests.get(f"{API_BASE}/audits", timeout=30)
     response.raise_for_status()
     return response.json()
 
 
 def load_audit_detail(audit_id: int):
+    if not USE_API_BACKEND:
+        from app.database import init_db, get_audit
+
+        init_db()
+        return get_audit(audit_id)
+
     response = requests.get(f"{API_BASE}/audits/{audit_id}", timeout=30)
     response.raise_for_status()
     return response.json()
+
+
+def show_pdf_download(audit_id: int, audit_data: dict, label: str):
+    if USE_API_BACKEND:
+        st.markdown(f"[{label}]({API_BASE}/audits/{audit_id}/pdf)")
+        return
+
+    from app.pdf_report import generate_pdf_report
+
+    pdf_path = Path(generate_pdf_report(audit_id, audit_data))
+    with pdf_path.open("rb") as pdf_file:
+        st.download_button(
+            label=label,
+            data=pdf_file,
+            file_name=pdf_path.name,
+            mime="application/pdf",
+        )
 
 
 def show_ai_tool_recommendations(ai_tools: list):
@@ -179,12 +247,12 @@ with tab1:
                 show_ai_tool_recommendations(ai_tool_recommendations)
 
                 if audit_id:
-                    st.markdown(f"[Download PDF Report]({API_BASE}/audits/{audit_id}/pdf)")
+                    show_pdf_download(audit_id, result, "Download PDF Report")
 
             except requests.exceptions.ConnectionError:
                 st.error(
                     f"Could not connect to the backend API at {API_BASE}. "
-                    "If this app is deployed, set API_BASE_URL to your public FastAPI URL."
+                    "Check that API_BASE_URL points to a reachable FastAPI URL."
                 )
             except requests.exceptions.HTTPError as e:
                 try:
@@ -245,12 +313,16 @@ with tab2:
 
                 show_ai_tool_recommendations(ai_tool_recommendations)
 
-                st.markdown(f"[Download PDF Report for Audit {selected_audit_id}]({API_BASE}/audits/{selected_audit_id}/pdf)")
+                show_pdf_download(
+                    selected_audit_id,
+                    result,
+                    f"Download PDF Report for Audit {selected_audit_id}",
+                )
 
     except requests.exceptions.ConnectionError:
         st.error(
             f"Could not connect to the backend API at {API_BASE}. "
-            "If this app is deployed, set API_BASE_URL to your public FastAPI URL."
+            "Check that API_BASE_URL points to a reachable FastAPI URL."
         )
     except Exception as e:
         st.error(f"Unexpected error while loading history: {str(e)}")

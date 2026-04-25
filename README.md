@@ -1,30 +1,41 @@
 # Ai-competitor-system
 
-Streamlit is the dashboard. FastAPI is the backend API. The dashboard must be able to reach the backend URL.
+Streamlit is the dashboard. It can run the audit engine directly, or call a separate FastAPI backend if `API_BASE_URL` is configured.
 
 ## Run Locally
 
-Start the backend:
-
-```bash
-python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-Start the dashboard:
+Option 1: run the dashboard directly:
 
 ```bash
 python3 -m streamlit run frontend/dashboard.py
 ```
 
-Local dashboard API URL defaults to:
+Option 2: run with a separate backend:
 
-```text
-http://127.0.0.1:8000
+```bash
+python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-## Deploy Backend
+Then start Streamlit with an API URL:
 
-If the dashboard runs on Streamlit Cloud, `127.0.0.1` is Streamlit Cloud itself, not your laptop. Deploy the FastAPI backend to a public host first.
+```bash
+API_BASE_URL=http://127.0.0.1:8000 \
+python3 -m streamlit run frontend/dashboard.py
+```
+
+## Streamlit Cloud
+
+For the simplest Streamlit Cloud deployment, do not set `API_BASE_URL`. Add this secret only:
+
+```toml
+OPENAI_API_KEY = "your_openai_key"
+```
+
+The app will run audits directly inside Streamlit Cloud.
+
+## Optional: Deploy Backend
+
+If you want a separate FastAPI backend, deploy it to a public host first. In hosted apps, `127.0.0.1` means the hosting container itself, not your laptop.
 
 Render setup:
 
@@ -49,12 +60,13 @@ OPENAI_API_KEY=your_openai_key
 https://ai-competitor-system-api.onrender.com
 ```
 
-## Connect Streamlit Cloud
+## Connect Streamlit Cloud To Backend
 
-In Streamlit Cloud, open the app settings and add this secret:
+If you deployed the optional backend, open Streamlit Cloud app settings and add:
 
 ```toml
 API_BASE_URL = "https://your-fastapi-backend-url"
+OPENAI_API_KEY = "your_openai_key"
 ```
 
 Then reboot or redeploy the Streamlit app.
