@@ -1,5 +1,9 @@
 import os
+import sys
 from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+sys.path.append(str(ROOT_DIR))
 
 import requests
 import pandas as pd
@@ -49,6 +53,7 @@ def run_audit_request(payload: dict):
         )
 
         target = result.get("target_business", {})
+
         audit_id = save_audit(
             business_name=target.get("business_name", ""),
             website=target.get("website", payload["website"]),
@@ -161,6 +166,7 @@ else:
     st.info("Running in direct Streamlit mode. No external FastAPI backend is configured.")
 
 tab1, tab2 = st.tabs(["Run Audit", "Audit History"])
+
 
 with tab1:
     st.subheader("Run New Audit")
@@ -304,8 +310,14 @@ with tab1:
                     st.error(f"API error: {e.response.json()}")
                 except Exception:
                     st.error(f"API error: {e.response.text}")
+            except ModuleNotFoundError as e:
+                st.error(
+                    f"Module import error: {str(e)}. "
+                    "Make sure your GitHub repo contains the app/ folder and app/__init__.py."
+                )
             except Exception as e:
                 st.error(f"Unexpected error: {str(e)}")
+
 
 with tab2:
     st.subheader("Saved Audit History")
@@ -401,6 +413,11 @@ with tab2:
         st.error(
             f"Could not connect to the backend API at {API_BASE}. "
             "Check that API_BASE_URL points to a reachable FastAPI URL."
+        )
+    except ModuleNotFoundError as e:
+        st.error(
+            f"Module import error: {str(e)}. "
+            "Make sure your GitHub repo contains the app/ folder and app/__init__.py."
         )
     except requests.exceptions.HTTPError as e:
         try:
